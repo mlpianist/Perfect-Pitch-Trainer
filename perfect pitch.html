@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pitch Identification Game</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        #game-container {
+            text-align: center;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #question-text {
+            font-size: 18px;
+            margin: 20px 0;
+        }
+        #congratulations {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 128, 0, 0.8);
+            color: white;
+            font-size: 48px;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        #results {
+            font-size: 18px;
+        }
+        #volume-control {
+            margin: 10px 0;
+        }
+        #replay-button {
+            background-color: #2196F3;
+        }
+        #replay-button:hover {
+            background-color: #1e88e5;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="menu">
+            <button id="start-button">Start Game</button>
+        </div>
+        <div id="game" style="display: none;">
+            <div id="volume-control" style="display: none;">
+                <label for="volume-slider">Volume: </label>
+                <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.2">
+            </div>
+            <div id="question-text"></div>
+            <div id="answer-buttons"></div>
+            <button id="replay-button" style="display: none;">Replay Pitch</button>
+        </div>
+        <div id="results" style="display: none;"></div>
+    </div>
+    <div id="congratulations">Congratulations!</div>
+
+    <script>
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const gainNode = audioContext.createGain();
+        gainNode.gain.setValueAtTime(0.2, audioContext.currentTime); // Start at 20% volume
+        gainNode.connect(audioContext.destination);
+        const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        const pitchRange = [];
+        for (let octave = 2; octave <= 6; octave++) {
+            notes.forEach(note => pitchRange.push({ note, octave }));
+        }
+
+        let currentQuestion = 0;
+        let subQuestion = 1;
+        let currentPitch = null;
+        let scores = { 1: 0, 2: 0, 3: 0, 4: 0 };
+        let gameStarted = false;
+        let secondAttempt = false; // Track if player is on second attempt
+        let canScore = true; // Track if points can be awarded for this question
+
+        function getFrequency(note, octave) {
+            const noteIndex = notes.indexOf(note);
+            const semitones = noteIndex + (octave * 12);
+            const a4Frequency = 440;
+            return a4Frequency * Math.pow(2, (semitones - 57) / 12);
+        }
+
+        function playPitch(note, octave, duration = 1) {
+            const oscillator = audioContext.createOscillator();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(getFrequency(note, octave), audioContext.currentTime);
+            oscillator.connect(gainNode);
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + duration);
+        }
+
+        function getRandomPitch() {
+            return pitchRange[Math.floor(Math.random() * pitchRange.length)];
+        }
+
+        function playRandomPitches(callback) {
+            const gameDiv = document.getElementById('game');
+            gameDiv.style.display = 'none'; // Hide game screen during random pitches
+            let pitchCount = 0;
+            const interval = 250; // 0.25 seconds per pitch
+
+            function playNextPitch() {
+                if (pitchCount < 10) {
+                    const randomPitch = getRandomPitch();
+                    playPitch(randomPitch.note, randomPitch.octave, 0.25);
+                    pitchCount++;
+                    setTimeout(playNextPitch, interval);
+                } else {
+                    gameDiv.style.display = 'block'; // Show game screen after pitches
+                    callback();
+                }
+            }
+            playNextPitch();
+        }
+
+        function getCorrectOctaves(pitch) {
+            const noteIndex = notes.indexOf(pitch.note);
+            const correctOctaves = [pitch.octave];
+            if (noteIndex >= 8) { // 4 half-steps above C (G#, A, A#, B)
+                correctOctaves.push(pitch.octave + 1);
+            }
+            if (noteIndex <= 3) { // 4 half-steps below C (C, C#, D, D#)
+                correctOctaves.push(pitch.octave - 1);
+            }
+            return correctOctaves.map(o => `C${o}`);
+        }
+
+        function getCorrectThird(pitch) {
+            const noteIndex = notes.indexOf(pitch.note);
+            let third;
+            if (noteIndex <= 3) third = 'C-D#';
+            else if (noteIndex <= 7) third = 'E-G';
+            else third = 'G#-B';
+
+            const correctThirds = [third];
+            if (noteIndex === 4) correctThirds.push('C-D#'); // E is 1 half-step above D#
+            if (noteIndex === 7) correctThirds.push('E-G'); // G# is 1 half-step above G
+            if (noteIndex === 8) correctThirds.push('G#-B'); // G# is 1 half-step below G#
+            if (noteIndex === 0) correctThirds.push('G#-B'); // C is 1 half-step below C
+            return correctThirds;
+        }
+
+        function getPitchGroupOptions(third) {
+            if (third === 'C-D#') return ['B, C, C#', 'D, D#, E'];
+            if (third === 'E-G') return ['D#, E, F', 'F#, G, G#'];
+            if (third === 'G#-B') return ['G, G#, A', 'A#, B, C'];
+        }
+
+        function getCorrectPitchGroup(pitch, third) {
+            const noteIndex = notes.indexOf(pitch.note);
+            if (third === 'C-D#') return noteIndex <= 2 ? 'B, C, C#' : 'D, D#, E';
+            if (third === 'E-G') return noteIndex <= 5 ? 'D#, E, F' : 'F#, G, G#';
+            if (third === 'G#-B') return noteIndex <= 9 ? 'G, G#, A' : 'A#, B, C';
+        }
+
+        function getFinalPitchOptions(group) {
+            return group.split(', ').map(p => p.trim());
+        }
+
+        function startGame() {
+            gameStarted = true;
+            currentQuestion = 0;
+            subQuestion = 1;
+            scores = { 1: 0, 2: 0, 3: 0, 4: 0 };
+            secondAttempt = false;
+            canScore = true;
+            document.getElementById('menu').style.display = 'none';
+            document.getElementById('game').style.display = 'block';
+            document.getElementById('volume-control').style.display = 'block';
+            document.getElementById('replay-button').style.display = 'inline-block';
+            document.getElementById('results').style.display = 'none';
+            nextQuestion();
+        }
+
+        function nextQuestion() {
+            if (currentQuestion >= 10) {
+                showResults();
+                return;
+            }
+            currentQuestion++;
+            subQuestion = 1;
+            secondAttempt = false;
+            canScore = true; // Reset scoring eligibility for new question
+            currentPitch = getRandomPitch();
+            playPitch(currentPitch.note, currentPitch.octave, 1);
+            showSubQuestion();
+        }
+
+        function showSubQuestion() {
+            const questionText = document.getElementById('question-text');
+            const answerButtons = document.getElementById('answer-buttons');
+            answerButtons.innerHTML = '';
+            const attemptText = secondAttempt ? ' (Second Attempt)' : '';
+
+            if (subQuestion === 1) {
+                questionText.textContent = `Which octave does the pitch belong to? Answers have 4 half-steps of allowance.${attemptText}`;
+                ['C2', 'C3', 'C4', 'C5', 'C6'].forEach(octave => {
+                    const button = document.createElement('button');
+                    button.textContent = octave;
+                    button.onclick = () => handleAnswer(octave, getCorrectOctaves(currentPitch));
+                    answerButtons.appendChild(button);
+                });
+            } else if (subQuestion === 2) {
+                questionText.textContent = `Which pitch group does the pitch belong to? Answers have 1 half-step of allowance.${attemptText}`;
+                ['C-D#', 'E-G', 'G#-B'].forEach(third => {
+                    const button = document.createElement('button');
+                    button.textContent = third;
+                    button.onclick = () => handleAnswer(third, getCorrectThird(currentPitch));
+                    answerButtons.appendChild(button);
+                });
+            } else if (subQuestion === 3) {
+                questionText.textContent = `Which pitch group does the pitch belong to? Answers have no allowance.${attemptText}`;
+                const options = getPitchGroupOptions(currentCorrectThird);
+                options.forEach(group => {
+                    const button = document.createElement('button');
+                    button.textContent = group;
+                    button.onclick = () => handleAnswer(group, [getCorrectPitchGroup(currentPitch, currentCorrectThird)]);
+                    answerButtons.appendChild(button);
+                });
+            } else if (subQuestion === 4) {
+                questionText.textContent = `What is the pitch?${attemptText}`;
+                const options = getFinalPitchOptions(currentCorrectGroup);
+                options.forEach(pitch => {
+                    const button = document.createElement('button');
+                    button.textContent = pitch;
+                    button.onclick = () => handleAnswer(pitch, [currentPitch.note]);
+                    answerButtons.appendChild(button);
+                });
+            }
+        }
+
+        let currentCorrectThird = null;
+        let currentCorrectGroup = null;
+
+        function handleAnswer(answer, correctAnswers) {
+            const isCorrect = correctAnswers.includes(answer);
+            if (isCorrect) {
+                // Correct answer
+                if (!secondAttempt && canScore) {
+                    scores[subQuestion]++; // Award point only on first attempt and if canScore is true
+                }
+                if (subQuestion === 1) {
+                    subQuestion++;
+                    secondAttempt = false;
+                    showSubQuestion();
+                } else if (subQuestion === 2) {
+                    currentCorrectThird = answer;
+                    subQuestion++;
+                    secondAttempt = false;
+                    showSubQuestion();
+                } else if (subQuestion === 3) {
+                    currentCorrectGroup = answer;
+                    subQuestion++;
+                    secondAttempt = false;
+                    showSubQuestion();
+                } else if (subQuestion === 4) {
+                    const congrats = document.getElementById('congratulations');
+                    congrats.style.display = 'flex';
+                    setTimeout(() => {
+                        congrats.style.display = 'none';
+                        if (currentQuestion < 10) {
+                            playRandomPitches(nextQuestion);
+                        } else {
+                            showResults();
+                        }
+                    }, 3000);
+                }
+            } else {
+                // Incorrect answer
+                if (!secondAttempt) {
+                    secondAttempt = true;
+                    canScore = false; // Disable scoring for this question
+                    showSubQuestion(); // Show same sub-question for second attempt
+                } else {
+                    // Second attempt failed, move to next question
+                    if (currentQuestion < 10) {
+                        playRandomPitches(nextQuestion);
+                    } else {
+                        showResults();
+                    }
+                }
+            }
+        }
+
+        function showResults() {
+            document.getElementById('game').style.display = 'none';
+            document.getElementById('volume-control').style.display = 'none';
+            document.getElementById('replay-button').style.display = 'none';
+            const results = document.getElementById('results');
+            results.style.display = 'block';
+            results.innerHTML = `
+                <p>1st sub-question - ${scores[1]} points</p>
+                <p>2nd sub-question - ${scores[2]} points</p>
+                <p>3rd sub-question - ${scores[3]} points</p>
+                <p>4th sub-question - ${scores[4]} points</p>
+                <button onclick="backToMenu()">Back to Menu</button>
+            `;
+        }
+
+        function backToMenu() {
+            document.getElementById('results').style.display = 'none';
+            document.getElementById('menu').style.display = 'block';
+            document.getElementById('volume-control').style.display = 'none';
+            document.getElementById('replay-button').style.display = 'none';
+        }
+
+        // Volume control
+        document.getElementById('volume-slider').addEventListener('input', (e) => {
+            gainNode.gain.setValueAtTime(e.target.value, audioContext.currentTime);
+        });
+
+        // Replay pitch
+        document.getElementById('replay-button').onclick = () => {
+            if (currentPitch) {
+                playPitch(currentPitch.note, currentPitch.octave, 1);
+            }
+        };
+
+        document.getElementById('start-button').onclick = startGame;
+    </script>
+</body>
+</html>
