@@ -69,7 +69,10 @@
 <body>
     <div id="game-container">
         <div id="menu">
-            <button id="start-button">Start Game</button>
+            <button onclick="startGame(1)">Level 1</button>
+            <button onclick="startGame(2)">Level 2</button>
+            <button onclick="startGame(3)">Level 3</button>
+            <button onclick="startGame(4)">Level 4</button>
         </div>
         <div id="game" style="display: none;">
             <div id="volume-control" style="display: none;">
@@ -87,7 +90,7 @@
     <script>
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         const gainNode = audioContext.createGain();
-        gainNode.gain.setValueAtTime(0.2, audioContext.currentTime); // Start at 20% volume
+        gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
         gainNode.connect(audioContext.destination);
         const notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
         const pitchRange = [];
@@ -100,8 +103,9 @@
         let currentPitch = null;
         let scores = { 1: 0, 2: 0, 3: 0, 4: 0 };
         let gameStarted = false;
-        let secondAttempt = false; // Track if player is on second attempt
-        let canScore = true; // Track if points can be awarded for this question
+        let secondAttempt = false;
+        let canScore = true;
+        let currentLevel = 1; // Track the current level (1, 2, 3, or 4)
 
         function getFrequency(note, octave) {
             const noteIndex = notes.indexOf(note);
@@ -111,6 +115,7 @@
         }
 
         function playPitch(note, octave, duration = 1) {
+            console.log(`Playing pitch: ${note}${octave}`);
             const oscillator = audioContext.createOscillator();
             oscillator.type = 'sine';
             oscillator.frequency.setValueAtTime(getFrequency(note, octave), audioContext.currentTime);
@@ -125,18 +130,23 @@
 
         function playRandomPitches(callback) {
             const gameDiv = document.getElementById('game');
-            gameDiv.style.display = 'none'; // Hide game screen during random pitches
+            gameDiv.style.display = 'none';
             let pitchCount = 0;
-            const interval = 250; // 0.25 seconds per pitch
+            const interval = 250;
 
             function playNextPitch() {
                 if (pitchCount < 10) {
                     const randomPitch = getRandomPitch();
-                    playPitch(randomPitch.note, randomPitch.octave, 0.25);
+                    const oscillator = audioContext.createOscillator();
+                    oscillator.type = 'sine';
+                    oscillator.frequency.setValueAtTime(getFrequency(randomPitch.note, randomPitch.octave), audioContext.currentTime);
+                    oscillator.connect(gainNode);
+                    oscillator.start();
+                    oscillator.stop(audioContext.currentTime + 0.25);
                     pitchCount++;
                     setTimeout(playNextPitch, interval);
                 } else {
-                    gameDiv.style.display = 'block'; // Show game screen after pitches
+                    gameDiv.style.display = 'block';
                     callback();
                 }
             }
@@ -146,10 +156,10 @@
         function getCorrectOctaves(pitch) {
             const noteIndex = notes.indexOf(pitch.note);
             const correctOctaves = [pitch.octave];
-            if (noteIndex >= 8) { // 4 half-steps above C (G#, A, A#, B)
+            if (noteIndex >= 8) {
                 correctOctaves.push(pitch.octave + 1);
             }
-            if (noteIndex <= 3) { // 4 half-steps below C (C, C#, D, D#)
+            if (noteIndex <= 3) {
                 correctOctaves.push(pitch.octave - 1);
             }
             return correctOctaves.map(o => `C${o}`);
@@ -163,10 +173,9 @@
             else third = 'G#-B';
 
             const correctThirds = [third];
-            if (noteIndex === 4) correctThirds.push('C-D#'); // E is 1 half-step above D#
-            if (noteIndex === 7) correctThirds.push('E-G'); // G# is 1 half-step above G
-            if (noteIndex === 8) correctThirds.push('G#-B'); // G# is 1 half-step below G#
-            if (noteIndex === 0) correctThirds.push('G#-B'); // C is 1 half-step below C
+            if (noteIndex === 4) correctThirds.push('C-D#');
+            if (noteIndex === 8) correctThirds.push('E-G');
+            if (noteIndex === 0) correctThirds.push('G#-B');
             return correctThirds;
         }
 
@@ -178,17 +187,18 @@
 
         function getCorrectPitchGroup(pitch, third) {
             const noteIndex = notes.indexOf(pitch.note);
-            if (third === 'C-D#') return noteIndex <= 2 ? 'B, C, C#' : 'D, D#, E';
+            if (third === 'C-D#') return noteIndex <= 1 ? 'B, C, C#' : 'D, D#, E';
             if (third === 'E-G') return noteIndex <= 5 ? 'D#, E, F' : 'F#, G, G#';
-            if (third === 'G#-B') return noteIndex <= 9 ? 'G, G#, A' : 'A#, B, C';
+            if (third === 'G#-B') return (noteIndex >= 7 && noteIndex <= 9) ? 'G, G#, A' : 'A#, B, C';
         }
 
         function getFinalPitchOptions(group) {
             return group.split(', ').map(p => p.trim());
         }
 
-        function startGame() {
+        function startGame(level) {
             gameStarted = true;
+            currentLevel = level; // Set the current level
             currentQuestion = 0;
             subQuestion = 1;
             scores = { 1: 0, 2: 0, 3: 0, 4: 0 };
@@ -210,7 +220,7 @@
             currentQuestion++;
             subQuestion = 1;
             secondAttempt = false;
-            canScore = true; // Reset scoring eligibility for new question
+            canScore = true;
             currentPitch = getRandomPitch();
             playPitch(currentPitch.note, currentPitch.octave, 1);
             showSubQuestion();
@@ -230,7 +240,7 @@
                     button.onclick = () => handleAnswer(octave, getCorrectOctaves(currentPitch));
                     answerButtons.appendChild(button);
                 });
-            } else if (subQuestion === 2) {
+            } else if (subQuestion === 2 && currentLevel >= 2) {
                 questionText.textContent = `Which pitch group does the pitch belong to? Answers have 1 half-step of allowance.${attemptText}`;
                 ['C-D#', 'E-G', 'G#-B'].forEach(third => {
                     const button = document.createElement('button');
@@ -238,7 +248,7 @@
                     button.onclick = () => handleAnswer(third, getCorrectThird(currentPitch));
                     answerButtons.appendChild(button);
                 });
-            } else if (subQuestion === 3) {
+            } else if (subQuestion === 3 && currentLevel >= 3) {
                 questionText.textContent = `Which pitch group does the pitch belong to? Answers have no allowance.${attemptText}`;
                 const options = getPitchGroupOptions(currentCorrectThird);
                 options.forEach(group => {
@@ -247,7 +257,7 @@
                     button.onclick = () => handleAnswer(group, [getCorrectPitchGroup(currentPitch, currentCorrectThird)]);
                     answerButtons.appendChild(button);
                 });
-            } else if (subQuestion === 4) {
+            } else if (subQuestion === 4 && currentLevel >= 4) {
                 questionText.textContent = `What is the pitch?${attemptText}`;
                 const options = getFinalPitchOptions(currentCorrectGroup);
                 options.forEach(pitch => {
@@ -265,25 +275,11 @@
         function handleAnswer(answer, correctAnswers) {
             const isCorrect = correctAnswers.includes(answer);
             if (isCorrect) {
-                // Correct answer
                 if (!secondAttempt && canScore) {
-                    scores[subQuestion]++; // Award point only on first attempt and if canScore is true
+                    scores[subQuestion]++;
                 }
-                if (subQuestion === 1) {
-                    subQuestion++;
-                    secondAttempt = false;
-                    showSubQuestion();
-                } else if (subQuestion === 2) {
-                    currentCorrectThird = answer;
-                    subQuestion++;
-                    secondAttempt = false;
-                    showSubQuestion();
-                } else if (subQuestion === 3) {
-                    currentCorrectGroup = answer;
-                    subQuestion++;
-                    secondAttempt = false;
-                    showSubQuestion();
-                } else if (subQuestion === 4) {
+                // Check if we've reached the max sub-question for the current level
+                if (subQuestion === currentLevel) {
                     const congrats = document.getElementById('congratulations');
                     congrats.style.display = 'flex';
                     setTimeout(() => {
@@ -294,15 +290,17 @@
                             showResults();
                         }
                     }, 3000);
+                } else {
+                    subQuestion++;
+                    secondAttempt = false;
+                    showSubQuestion();
                 }
             } else {
-                // Incorrect answer
                 if (!secondAttempt) {
                     secondAttempt = true;
-                    canScore = false; // Disable scoring for this question
-                    showSubQuestion(); // Show same sub-question for second attempt
+                    canScore = false;
+                    showSubQuestion();
                 } else {
-                    // Second attempt failed, move to next question
                     if (currentQuestion < 10) {
                         playRandomPitches(nextQuestion);
                     } else {
@@ -318,13 +316,13 @@
             document.getElementById('replay-button').style.display = 'none';
             const results = document.getElementById('results');
             results.style.display = 'block';
-            results.innerHTML = `
-                <p>1st sub-question - ${scores[1]} points</p>
-                <p>2nd sub-question - ${scores[2]} points</p>
-                <p>3rd sub-question - ${scores[3]} points</p>
-                <p>4th sub-question - ${scores[4]} points</p>
-                <button onclick="backToMenu()">Back to Menu</button>
-            `;
+            let resultsHTML = '';
+            if (currentLevel >= 1) resultsHTML += `<p>1st sub-question - ${scores[1]} points</p>`;
+            if (currentLevel >= 2) resultsHTML += `<p>2nd sub-question - ${scores[2]} points</p>`;
+            if (currentLevel >= 3) resultsHTML += `<p>3rd sub-question - ${scores[3]} points</p>`;
+            if (currentLevel >= 4) resultsHTML += `<p>4th sub-question - ${scores[4]} points</p>`;
+            resultsHTML += `<button onclick="backToMenu()">Back to Menu</button>`;
+            results.innerHTML = resultsHTML;
         }
 
         function backToMenu() {
@@ -334,19 +332,15 @@
             document.getElementById('replay-button').style.display = 'none';
         }
 
-        // Volume control
         document.getElementById('volume-slider').addEventListener('input', (e) => {
             gainNode.gain.setValueAtTime(e.target.value, audioContext.currentTime);
         });
 
-        // Replay pitch
         document.getElementById('replay-button').onclick = () => {
             if (currentPitch) {
                 playPitch(currentPitch.note, currentPitch.octave, 1);
             }
         };
-
-        document.getElementById('start-button').onclick = startGame;
     </script>
 </body>
 </html>
